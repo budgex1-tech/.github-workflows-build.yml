@@ -46,8 +46,19 @@ jobs:
                   applicationId = "com.example.clickkey"
                   minSdk = 24
                   targetSdk = 34
-                  versionCode = 2
-                  versionName = "2.0"
+                  versionCode = 3
+                  versionName = "2.1"
+              }
+              signingConfigs {
+                  create("fixed") {
+                      storeFile = file("fixed.keystore")
+                      storePassword = "android"
+                      keyAlias = "key"
+                      keyPassword = "android"
+                  }
+              }
+              buildTypes {
+                  getByName("debug") { signingConfig = signingConfigs.getByName("fixed") }
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -55,6 +66,54 @@ jobs:
               }
               kotlinOptions { jvmTarget = "17" }
           }
+          EOF_FILE
+          mkdir -p app
+          cat > app/fixed.keystore.b64 <<'EOF_FILE'
+          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
           EOF_FILE
           mkdir -p app/src/main
           cat > app/src/main/AndroidManifest.xml <<'EOF_FILE'
@@ -129,6 +188,7 @@ jobs:
           import android.graphics.drawable.GradientDrawable
           import android.os.Handler
           import android.os.Looper
+          import android.os.SystemClock
           import android.view.Gravity
           import android.view.KeyEvent
           import android.view.MotionEvent
@@ -151,6 +211,7 @@ jobs:
               private val picker = ArrayList<View>()
               private val burst = 4
               private val size = 110
+              private var currentPkg: String? = null
 
               override fun onServiceConnected() {
                   instance = this
@@ -177,44 +238,59 @@ jobs:
               // ---------- Volume keys ----------
 
               override fun onKeyEvent(event: KeyEvent): Boolean {
-                  if (!prefs.getBoolean("enabled", true) || picker.isNotEmpty()) return false
                   val code = event.keyCode
                   if (code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) return false
+                  val down = event.action == KeyEvent.ACTION_DOWN
+                  val hold = prefs.getBoolean("hold", false)
+
+                  // Safety: while clicking, ANY volume button always stops it
+                  if (running) {
+                      if (hold) {
+                          if (!down) stopClicks()
+                      } else if (down && event.repeatCount == 0) {
+                          stopClicks()
+                          say("Clicking OFF")
+                      }
+                      return true
+                  }
+
+                  if (!prefs.getBoolean("enabled", true) || picker.isNotEmpty()) return false
                   val match = when (prefs.getInt("trigger", 0)) {
                       0 -> code == KeyEvent.KEYCODE_VOLUME_UP
                       1 -> code == KeyEvent.KEYCODE_VOLUME_DOWN
                       else -> true
                   }
                   if (!match) return false
-                  val hold = prefs.getBoolean("hold", false)
-                  if (event.action == KeyEvent.ACTION_DOWN) {
-                      if (event.repeatCount == 0) {
-                          if (hold) startClicks() else toggleClicks()
-                      }
-                  } else if (event.action == KeyEvent.ACTION_UP && hold) {
-                      stopClicks()
-                  }
+                  if (down && event.repeatCount == 0) startClicks(!hold)
                   return true
               }
 
               // ---------- Clicking ----------
 
-              private fun toggleClicks() {
-                  if (running) stopClicks() else startClicks()
-                  Toast.makeText(this, if (running) "Clicking ON" else "Clicking OFF", Toast.LENGTH_SHORT).show()
-              }
+              private fun say(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
-              private fun startClicks() {
+              private fun startClicks(announce: Boolean) {
                   if (running) return
+                  if (!prefs.contains("ax")) { say("Set a position in ClickKey first"); return }
+                  if (currentPkg == packageName) { say("Open the app you want to click first"); return }
                   running = true
+                  if (announce) say("Clicking ON")
+                  val limit = when (prefs.getInt("autostop", 1)) { 0 -> 30000L; 1 -> 120000L; else -> 0L }
+                  if (limit > 0) handler.postDelayed(autoStop, limit)
                   handler.post(loop)
               }
 
               private fun stopClicks() {
                   running = false
                   handler.removeCallbacks(loop)
+                  handler.removeCallbacks(autoStop)
               }
 
+              private val autoStop = Runnable {
+                  if (running) { stopClicks(); say("Auto-stopped") }
+              }
+
+              // One tap at a time: next tap is only scheduled after the last one finished
               private val loop = object : Runnable {
                   override fun run() {
                       if (!running) return
@@ -230,13 +306,22 @@ jobs:
                           moveTo(ax, ay)
                           if (drag) lineTo(bx, by)
                       }
-                      val dur = if (drag) (gap - 5).coerceAtLeast(1) else 10L
+                      val dur = if (drag) (gap - 10).coerceIn(20L, 300L) else 10L
+                      val started = SystemClock.uptimeMillis()
                       val g = GestureDescription.Builder()
-                      for (i in 0 until burst) {
-                          g.addStroke(GestureDescription.StrokeDescription(path, i * gap, dur))
-                      }
-                      dispatchGesture(g.build(), null, null)
-                      handler.postDelayed(this, burst * gap)
+                          .addStroke(GestureDescription.StrokeDescription(path, 0, dur))
+                          .build()
+                      val ok = dispatchGesture(g, object : AccessibilityService.GestureResultCallback() {
+                          override fun onCompleted(gestureDescription: GestureDescription?) { next(started, gap) }
+                          override fun onCancelled(gestureDescription: GestureDescription?) { next(started, gap) }
+                      }, null)
+                      if (!ok) next(started, gap)
+                  }
+
+                  private fun next(started: Long, gap: Long) {
+                      if (!running) return
+                      val wait = (gap - (SystemClock.uptimeMillis() - started)).coerceAtLeast(1L)
+                      handler.postDelayed(this, wait)
                   }
               }
 
@@ -322,12 +407,13 @@ jobs:
                               }
                               ed.apply()
                               hidePicker()
+                              currentPkg = null
                               Toast.makeText(this@ClickService, "Position saved", Toast.LENGTH_SHORT).show()
                           }
                       })
                       addView(Button(this@ClickService).apply {
                           text = "Cancel"
-                          setOnClickListener { hidePicker() }
+                          setOnClickListener { hidePicker(); currentPkg = null }
                       })
                   }
                   wm.addView(
@@ -347,7 +433,13 @@ jobs:
                   picker.clear()
               }
 
-              override fun onAccessibilityEvent(e: AccessibilityEvent?) {}
+              override fun onAccessibilityEvent(e: AccessibilityEvent?) {
+                  if (e == null || e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+                  val pkg = e.packageName?.toString() ?: return
+                  if (pkg == packageName && picker.isNotEmpty()) return
+                  currentPkg = pkg
+                  if (running && pkg == packageName) stopClicks()
+              }
               override fun onInterrupt() { stopClicks() }
           }
           EOF_FILE
@@ -532,7 +624,11 @@ jobs:
                           refresh()
                       },
                       cpsTv,
-                      seek
+                      seek,
+                      lab("Auto-stop").apply { setPadding(0, dp(16), 0, 0) },
+                      segmented(listOf("30 sec", "2 min", "Never"), sp.getInt("autostop", 1)) {
+                          sp.edit().putInt("autostop", it).apply()
+                      }
                   ))
 
                   // Position
@@ -553,7 +649,7 @@ jobs:
                   }
                   root.addView(card(lab("Position"), posTv, setBtn))
 
-                  root.addView(tv("Volume keys are only captured while the service is on and the trigger switch is enabled.", 12f, MUTED)
+                  root.addView(tv("While clicking, pressing any volume button stops it. Open the app you want to click before you start.", 12f, MUTED)
                       .apply { setPadding(dp(4), dp(18), dp(4), 0) })
 
                   setContentView(ScrollView(this).apply {
@@ -580,10 +676,11 @@ jobs:
                       var s = "A: ${sp.getFloat("ax", 0f).toInt()}, ${sp.getFloat("ay", 0f).toInt()}"
                       if (sp.getBoolean("drag", false)) s += "   →   B: ${sp.getFloat("bx", 0f).toInt()}, ${sp.getFloat("by", 0f).toInt()}"
                       s
-                  } else "Not set (uses screen center)"
+                  } else "Not set. Set a position before clicking"
               }
           }
           EOF_FILE
+          base64 -d app/fixed.keystore.b64 > app/fixed.keystore
       - name: Build
         working-directory: proj
         run: gradle assembleDebug --no-daemon
