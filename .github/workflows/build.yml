@@ -17,21 +17,18 @@ jobs:
       - name: Write project files
         run: |
           mkdir -p proj && cd proj
-          mkdir -p .
           cat > settings.gradle.kts <<'EOF_FILE'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositories { google(); mavenCentral() } }
-          rootProject.name = "AutoClicker"
+          rootProject.name = "ClickKey"
           include(":app")
           EOF_FILE
-          mkdir -p .
           cat > build.gradle.kts <<'EOF_FILE'
           plugins {
               id("com.android.application") version "8.5.2" apply false
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
           EOF_FILE
-          mkdir -p .
           cat > gradle.properties <<'EOF_FILE'
           android.useAndroidX=true
           org.gradle.jvmargs=-Xmx2g
@@ -46,11 +43,11 @@ jobs:
               namespace = "com.example.autoclicker"
               compileSdk = 34
               defaultConfig {
-                  applicationId = "com.example.autoclicker"
+                  applicationId = "com.example.clickkey"
                   minSdk = 24
                   targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
+                  versionCode = 2
+                  versionName = "2.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -64,8 +61,9 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <application
-                  android:label="AutoClicker"
-                  android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+                  android:label="ClickKey"
+                  android:icon="@drawable/ic_launcher"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -75,7 +73,7 @@ jobs:
                   <service
                       android:name=".ClickService"
                       android:exported="false"
-                      android:label="AutoClicker"
+                      android:label="ClickKey"
                       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
                       <intent-filter>
                           <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -91,53 +89,30 @@ jobs:
           cat > app/src/main/res/xml/accessibility_config.xml <<'EOF_FILE'
           <?xml version="1.0" encoding="utf-8"?>
           <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-              android:accessibilityEventTypes="typeAllMask"
+              android:accessibilityEventTypes="typeWindowStateChanged"
               android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagRequestFilterKeyEvents"
               android:canPerformGestures="true"
+              android:canRequestFilterKeyEvents="true"
               android:description="@string/service_desc"
               android:notificationTimeout="100" />
           EOF_FILE
           mkdir -p app/src/main/res/values
           cat > app/src/main/res/values/strings.xml <<'EOF_FILE'
           <resources>
-              <string name="service_desc">Performs taps and swipes for the AutoClicker overlay.</string>
+              <string name="service_desc">Taps the screen when you press a volume button.</string>
           </resources>
           EOF_FILE
-          mkdir -p app/src/main/java/com/example/autoclicker
-          cat > app/src/main/java/com/example/autoclicker/MainActivity.kt <<'EOF_FILE'
-          package com.example.autoclicker
-
-          import android.app.Activity
-          import android.content.Intent
-          import android.os.Bundle
-          import android.provider.Settings
-          import android.view.Gravity
-          import android.widget.Button
-          import android.widget.LinearLayout
-          import android.widget.TextView
-
-          class MainActivity : Activity() {
-              override fun onCreate(b: Bundle?) {
-                  super.onCreate(b)
-                  val col = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      gravity = Gravity.CENTER
-                      setPadding(60, 60, 60, 60)
-                  }
-                  col.addView(TextView(this).apply {
-                      text = "1. Tap below and enable AutoClicker under Accessibility.\n" +
-                          "2. A floating bar appears on screen.\n" +
-                          "3. Drag the markers to where you want to tap (or swipe from A to B).\n" +
-                          "4. Hit ▶ to start, ■ to stop."
-                      textSize = 16f
-                  })
-                  col.addView(Button(this).apply {
-                      text = "Open Accessibility Settings"
-                      setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                  })
-                  setContentView(col)
-              }
-          }
+          mkdir -p app/src/main/res/drawable
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF_FILE'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="96dp"
+              android:height="96dp"
+              android:viewportWidth="96"
+              android:viewportHeight="96">
+              <path android:fillColor="#000000" android:pathData="M0,0h96v96h-96z" />
+              <path android:fillColor="#FFFFFF" android:pathData="M30,22 L30,70 L42,59 L50,76 L58,72 L50,56 L66,56 Z" />
+          </vector>
           EOF_FILE
           mkdir -p app/src/main/java/com/example/autoclicker
           cat > app/src/main/java/com/example/autoclicker/ClickService.kt <<'EOF_FILE'
@@ -145,13 +120,17 @@ jobs:
 
           import android.accessibilityservice.AccessibilityService
           import android.accessibilityservice.GestureDescription
+          import android.content.Intent
+          import android.content.SharedPreferences
           import android.graphics.Color
           import android.graphics.Path
           import android.graphics.PixelFormat
+          import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
           import android.os.Handler
           import android.os.Looper
           import android.view.Gravity
+          import android.view.KeyEvent
           import android.view.MotionEvent
           import android.view.View
           import android.view.WindowManager
@@ -159,67 +138,121 @@ jobs:
           import android.widget.Button
           import android.widget.LinearLayout
           import android.widget.TextView
+          import android.widget.Toast
 
           class ClickService : AccessibilityService() {
 
+              companion object { @Volatile var instance: ClickService? = null }
+
               private lateinit var wm: WindowManager
+              private lateinit var prefs: SharedPreferences
               private val handler = Handler(Looper.getMainLooper())
-
               private var running = false
-              private var dragMode = false
-              private var cps = 16
-              private val burst = 4            // strokes per gesture (max allowed is 10)
-              private val markerSize = 90
-
-              private lateinit var panel: LinearLayout
-              private lateinit var markerA: TextView
-              private lateinit var markerB: TextView
-              private lateinit var startBtn: Button
-              private lateinit var modeBtn: Button
-              private lateinit var cpsLabel: TextView
+              private val picker = ArrayList<View>()
+              private val burst = 4
+              private val size = 110
 
               override fun onServiceConnected() {
+                  instance = this
                   wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                  buildMarkers()
-                  buildPanel()
+                  prefs = getSharedPreferences("cfg", MODE_PRIVATE)
               }
 
-              // ---------- UI ----------
+              override fun onUnbind(intent: Intent?): Boolean {
+                  shutdown()
+                  return super.onUnbind(intent)
+              }
 
-              private fun overlayParams(w: Int, h: Int, x: Int, y: Int) = WindowManager.LayoutParams(
-                  w, h,
-                  WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                  WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                      WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                      WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                  PixelFormat.TRANSLUCENT
-              ).apply { gravity = Gravity.TOP or Gravity.START; this.x = x; this.y = y }
+              override fun onDestroy() {
+                  shutdown()
+                  super.onDestroy()
+              }
 
-              private fun makeMarker(label: String, color: Int, x: Int, y: Int): TextView {
-                  val tv = TextView(this).apply {
-                      text = label
-                      setTextColor(Color.WHITE)
-                      gravity = Gravity.CENTER
-                      textSize = 16f
-                      background = GradientDrawable().apply {
-                          shape = GradientDrawable.OVAL
-                          setColor(color and 0x00FFFFFF or 0x99000000.toInt())
-                          setStroke(4, Color.WHITE)
-                      }
+              private fun shutdown() {
+                  instance = null
+                  stopClicks()
+                  hidePicker()
+              }
+
+              // ---------- Volume keys ----------
+
+              override fun onKeyEvent(event: KeyEvent): Boolean {
+                  if (!prefs.getBoolean("enabled", true) || picker.isNotEmpty()) return false
+                  val code = event.keyCode
+                  if (code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN) return false
+                  val match = when (prefs.getInt("trigger", 0)) {
+                      0 -> code == KeyEvent.KEYCODE_VOLUME_UP
+                      1 -> code == KeyEvent.KEYCODE_VOLUME_DOWN
+                      else -> true
                   }
-                  val lp = overlayParams(markerSize, markerSize, x, y)
-                  tv.setOnTouchListener(dragListener(tv, lp))
-                  wm.addView(tv, lp)
-                  return tv
+                  if (!match) return false
+                  val hold = prefs.getBoolean("hold", false)
+                  if (event.action == KeyEvent.ACTION_DOWN) {
+                      if (event.repeatCount == 0) {
+                          if (hold) startClicks() else toggleClicks()
+                      }
+                  } else if (event.action == KeyEvent.ACTION_UP && hold) {
+                      stopClicks()
+                  }
+                  return true
               }
 
-              private fun buildMarkers() {
-                  markerA = makeMarker("A", Color.RED, 400, 900)
-                  markerB = makeMarker("B", Color.BLUE, 400, 1300)
-                  markerB.visibility = View.GONE
+              // ---------- Clicking ----------
+
+              private fun toggleClicks() {
+                  if (running) stopClicks() else startClicks()
+                  Toast.makeText(this, if (running) "Clicking ON" else "Clicking OFF", Toast.LENGTH_SHORT).show()
               }
 
-              private fun dragListener(v: View, lp: WindowManager.LayoutParams): View.OnTouchListener {
+              private fun startClicks() {
+                  if (running) return
+                  running = true
+                  handler.post(loop)
+              }
+
+              private fun stopClicks() {
+                  running = false
+                  handler.removeCallbacks(loop)
+              }
+
+              private val loop = object : Runnable {
+                  override fun run() {
+                      if (!running) return
+                      val dm = resources.displayMetrics
+                      val cps = prefs.getInt("cps", 16).coerceIn(1, 30)
+                      val gap = 1000L / cps
+                      val drag = prefs.getBoolean("drag", false)
+                      val ax = prefs.getFloat("ax", dm.widthPixels / 2f)
+                      val ay = prefs.getFloat("ay", dm.heightPixels * 0.45f)
+                      val bx = prefs.getFloat("bx", dm.widthPixels / 2f)
+                      val by = prefs.getFloat("by", dm.heightPixels * 0.65f)
+                      val path = Path().apply {
+                          moveTo(ax, ay)
+                          if (drag) lineTo(bx, by)
+                      }
+                      val dur = if (drag) (gap - 5).coerceAtLeast(1) else 10L
+                      val g = GestureDescription.Builder()
+                      for (i in 0 until burst) {
+                          g.addStroke(GestureDescription.StrokeDescription(path, i * gap, dur))
+                      }
+                      dispatchGesture(g.build(), null, null)
+                      handler.postDelayed(this, burst * gap)
+                  }
+              }
+
+              // ---------- Position picker ----------
+
+              private fun params(w: Int, h: Int, x: Int, y: Int, g: Int = Gravity.TOP or Gravity.START) =
+                  WindowManager.LayoutParams(
+                      w, h,
+                      WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                      PixelFormat.TRANSLUCENT
+                  ).apply { gravity = g; this.x = x; this.y = y }
+
+              private fun dragger(v: View, lp: WindowManager.LayoutParams): View.OnTouchListener {
                   var sx = 0; var sy = 0; var tx = 0f; var ty = 0f
                   return View.OnTouchListener { _, e ->
                       when (e.action) {
@@ -234,96 +267,320 @@ jobs:
                   }
               }
 
-              private fun buildPanel() {
-                  val ctx = this
-                  panel = LinearLayout(ctx).apply {
-                      orientation = LinearLayout.HORIZONTAL
-                      setBackgroundColor(0xDD222222.toInt())
-                      setPadding(8, 8, 8, 8)
+              private fun marker(label: String, cx: Float, cy: Float): TextView {
+                  val t = TextView(this).apply {
+                      text = label
+                      setTextColor(Color.WHITE)
+                      gravity = Gravity.CENTER
+                      textSize = 18f
+                      typeface = Typeface.DEFAULT_BOLD
+                      background = GradientDrawable().apply {
+                          shape = GradientDrawable.OVAL
+                          setColor(0xCC000000.toInt())
+                          setStroke(5, Color.WHITE)
+                      }
                   }
-                  val handle = TextView(ctx).apply {
-                      text = "⠿"; textSize = 22f; setTextColor(Color.WHITE)
-                      setPadding(16, 0, 16, 0); gravity = Gravity.CENTER
-                  }
-                  startBtn = Button(ctx).apply { text = "▶"; setOnClickListener { toggle() } }
-                  modeBtn = Button(ctx).apply { text = "TAP"; setOnClickListener { toggleMode() } }
-                  val minus = Button(ctx).apply { text = "−"; setOnClickListener { setCps(cps - 1) } }
-                  cpsLabel = TextView(ctx).apply {
-                      text = "$cps"; setTextColor(Color.WHITE); gravity = Gravity.CENTER
-                      setPadding(12, 0, 12, 0)
-                  }
-                  val plus = Button(ctx).apply { text = "+"; setOnClickListener { setCps(cps + 1) } }
-                  listOf(handle, startBtn, modeBtn, minus, cpsLabel, plus).forEach { panel.addView(it) }
+                  val lp = params(size, size, (cx - size / 2f).toInt(), (cy - size / 2f).toInt())
+                  t.setOnTouchListener(dragger(t, lp))
+                  wm.addView(t, lp)
+                  picker.add(t)
+                  return t
+              }
 
-                  val lp = overlayParams(
-                      WindowManager.LayoutParams.WRAP_CONTENT,
-                      WindowManager.LayoutParams.WRAP_CONTENT, 40, 200
+              private fun center(v: View): Pair<Float, Float> {
+                  val lp = v.layoutParams as WindowManager.LayoutParams
+                  return Pair(lp.x + size / 2f, lp.y + size / 2f)
+              }
+
+              fun showPicker() {
+                  if (picker.isNotEmpty()) return
+                  stopClicks()
+                  val dm = resources.displayMetrics
+                  val drag = prefs.getBoolean("drag", false)
+                  val a = marker(
+                      "A",
+                      prefs.getFloat("ax", dm.widthPixels / 2f),
+                      prefs.getFloat("ay", dm.heightPixels * 0.45f)
                   )
-                  handle.setOnTouchListener(dragListener(panel, lp))
-                  wm.addView(panel, lp)
-              }
+                  val b = if (drag) marker(
+                      "B",
+                      prefs.getFloat("bx", dm.widthPixels / 2f),
+                      prefs.getFloat("by", dm.heightPixels * 0.65f)
+                  ) else null
 
-              private fun setCps(v: Int) {
-                  cps = v.coerceIn(1, 30)
-                  cpsLabel.text = "$cps"
-              }
-
-              private fun toggleMode() {
-                  dragMode = !dragMode
-                  modeBtn.text = if (dragMode) "DRAG" else "TAP"
-                  markerB.visibility = if (dragMode) View.VISIBLE else View.GONE
-              }
-
-              // Markers ignore touches while running so clicks pass through to the app below
-              private fun setMarkersTouchable(touchable: Boolean) {
-                  for (m in listOf(markerA, markerB)) {
-                      val lp = m.layoutParams as WindowManager.LayoutParams
-                      lp.flags = if (touchable) lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-                      else lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                      wm.updateViewLayout(m, lp)
+                  val bar = LinearLayout(this).apply {
+                      setBackgroundColor(0xEE000000.toInt())
+                      setPadding(24, 16, 24, 16)
+                      addView(Button(this@ClickService).apply {
+                          text = "Save"
+                          setOnClickListener {
+                              val (ax, ay) = center(a)
+                              val ed = prefs.edit().putFloat("ax", ax).putFloat("ay", ay)
+                              if (b != null) {
+                                  val (bx, by) = center(b)
+                                  ed.putFloat("bx", bx).putFloat("by", by)
+                              }
+                              ed.apply()
+                              hidePicker()
+                              Toast.makeText(this@ClickService, "Position saved", Toast.LENGTH_SHORT).show()
+                          }
+                      })
+                      addView(Button(this@ClickService).apply {
+                          text = "Cancel"
+                          setOnClickListener { hidePicker() }
+                      })
                   }
+                  wm.addView(
+                      bar,
+                      params(
+                          WindowManager.LayoutParams.WRAP_CONTENT,
+                          WindowManager.LayoutParams.WRAP_CONTENT,
+                          0, 140, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                      )
+                  )
+                  picker.add(bar)
+                  Toast.makeText(this, "Drag the markers, then tap Save", Toast.LENGTH_LONG).show()
               }
 
-              // ---------- Clicking ----------
-
-              private fun center(m: View): Pair<Float, Float> {
-                  val lp = m.layoutParams as WindowManager.LayoutParams
-                  return Pair(lp.x + markerSize / 2f, lp.y + markerSize / 2f)
-              }
-
-              private fun toggle() {
-                  running = !running
-                  startBtn.text = if (running) "■" else "▶"
-                  setMarkersTouchable(!running)
-                  if (running) handler.post(loop)
-              }
-
-              private val loop = object : Runnable {
-                  override fun run() {
-                      if (!running) return
-                      val gap = 1000L / cps
-                      val (ax, ay) = center(markerA)
-                      val path = Path().apply {
-                          moveTo(ax, ay)
-                          if (dragMode) { val (bx, by) = center(markerB); lineTo(bx, by) }
-                      }
-                      val dur = if (dragMode) (gap - 5).coerceAtLeast(1) else 10L
-                      val g = GestureDescription.Builder()
-                      for (i in 0 until burst) {
-                          g.addStroke(GestureDescription.StrokeDescription(path, i * gap, dur))
-                      }
-                      dispatchGesture(g.build(), null, null)
-                      handler.postDelayed(this, burst * gap)
-                  }
+              private fun hidePicker() {
+                  for (v in picker) runCatching { wm.removeView(v) }
+                  picker.clear()
               }
 
               override fun onAccessibilityEvent(e: AccessibilityEvent?) {}
-              override fun onInterrupt() { running = false }
+              override fun onInterrupt() { stopClicks() }
+          }
+          EOF_FILE
+          mkdir -p app/src/main/java/com/example/autoclicker
+          cat > app/src/main/java/com/example/autoclicker/MainActivity.kt <<'EOF_FILE'
+          package com.example.autoclicker
 
-              override fun onDestroy() {
-                  running = false
-                  for (v in listOf(panel, markerA, markerB)) runCatching { wm.removeView(v) }
-                  super.onDestroy()
+          import android.app.Activity
+          import android.content.Intent
+          import android.content.SharedPreferences
+          import android.content.res.ColorStateList
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.SeekBar
+          import android.widget.Switch
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class MainActivity : Activity() {
+
+              private lateinit var sp: SharedPreferences
+              private lateinit var dot: View
+              private lateinit var statusTv: TextView
+              private lateinit var enableBtn: TextView
+              private lateinit var posTv: TextView
+
+              private val CARD = 0xFF111111.toInt()
+              private val LINE = 0xFF262626.toInt()
+              private val MUTED = 0xFF8C8C8C.toInt()
+              private val WHITE = Color.WHITE
+              private val GREEN = 0xFF34D399.toInt()
+              private val RED = 0xFFF87171.toInt()
+
+              private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+              private fun rounded(fill: Int, stroke: Int = 0, r: Int = 18) = GradientDrawable().apply {
+                  setColor(fill)
+                  cornerRadius = dp(r).toFloat()
+                  if (stroke != 0) setStroke(dp(1), stroke)
+              }
+
+              private fun tv(s: String, size: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
+                  text = s
+                  textSize = size
+                  setTextColor(color)
+                  if (bold) typeface = Typeface.DEFAULT_BOLD
+              }
+
+              private fun lab(s: String) = tv(s.uppercase(), 11f, MUTED, true).apply { letterSpacing = 0.12f }
+
+              private fun card(vararg views: View) = LinearLayout(this).apply {
+                  orientation = LinearLayout.VERTICAL
+                  background = rounded(CARD, LINE)
+                  setPadding(dp(18), dp(16), dp(18), dp(16))
+                  layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+                  for (v in views) addView(v)
+              }
+
+              private fun segmented(opts: List<String>, sel: Int, onPick: (Int) -> Unit): LinearLayout {
+                  val row = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      background = rounded(0xFF1A1A1A.toInt(), 0, 12)
+                      setPadding(dp(3), dp(3), dp(3), dp(3))
+                      layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
+                  }
+                  val tvs = ArrayList<TextView>()
+                  fun paint(i: Int) {
+                      tvs.forEachIndexed { j, t ->
+                          t.background = if (j == i) rounded(WHITE, 0, 10) else null
+                          t.setTextColor(if (j == i) Color.BLACK else MUTED)
+                      }
+                  }
+                  opts.forEachIndexed { i, s ->
+                      val t = tv(s, 14f, MUTED, true).apply {
+                          gravity = Gravity.CENTER
+                          setPadding(0, dp(10), 0, dp(10))
+                          layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                          setOnClickListener { paint(i); onPick(i) }
+                      }
+                      tvs.add(t)
+                      row.addView(t)
+                  }
+                  paint(sel)
+                  return row
+              }
+
+              override fun onCreate(b: Bundle?) {
+                  super.onCreate(b)
+                  sp = getSharedPreferences("cfg", MODE_PRIVATE)
+                  window.statusBarColor = Color.BLACK
+                  window.navigationBarColor = Color.BLACK
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(20), dp(32), dp(20), dp(28))
+                  }
+                  root.addView(tv("ClickKey", 32f, WHITE, true))
+                  root.addView(tv("Volume button auto clicker", 15f, MUTED).apply { setPadding(0, dp(2), 0, dp(8)) })
+
+                  // Status
+                  dot = View(this).apply {
+                      layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { rightMargin = dp(12) }
+                  }
+                  statusTv = tv("", 16f, WHITE, true).apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
+                  enableBtn = tv("Enable", 14f, Color.BLACK, true).apply {
+                      background = rounded(WHITE, 0, 20)
+                      setPadding(dp(16), dp(8), dp(16), dp(8))
+                      setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                  }
+                  val statusRow = LinearLayout(this).apply {
+                      gravity = Gravity.CENTER_VERTICAL
+                      addView(dot)
+                      addView(statusTv)
+                      addView(enableBtn)
+                  }
+                  root.addView(card(statusRow))
+
+                  // Master switch
+                  val sw = Switch(this).apply {
+                      isChecked = sp.getBoolean("enabled", true)
+                      val on = intArrayOf(android.R.attr.state_checked)
+                      val off = intArrayOf()
+                      thumbTintList = ColorStateList(arrayOf(on, off), intArrayOf(WHITE, 0xFF777777.toInt()))
+                      trackTintList = ColorStateList(arrayOf(on, off), intArrayOf(0xFF555555.toInt(), 0xFF2A2A2A.toInt()))
+                      setOnCheckedChangeListener { _, c -> sp.edit().putBoolean("enabled", c).apply() }
+                  }
+                  val enRow = LinearLayout(this).apply {
+                      gravity = Gravity.CENTER_VERTICAL
+                      addView(LinearLayout(this@MainActivity).apply {
+                          orientation = LinearLayout.VERTICAL
+                          layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+                          addView(tv("Volume trigger", 16f, WHITE, true))
+                          addView(tv("Press your volume button to start / stop", 12f, MUTED))
+                      })
+                      addView(sw)
+                  }
+                  root.addView(card(enRow))
+
+                  // Trigger
+                  root.addView(card(
+                      lab("Trigger button"),
+                      segmented(listOf("Vol Up", "Vol Down", "Either"), sp.getInt("trigger", 0)) {
+                          sp.edit().putInt("trigger", it).apply()
+                      },
+                      lab("Behavior").apply { setPadding(0, dp(16), 0, 0) },
+                      segmented(listOf("Toggle", "Hold"), if (sp.getBoolean("hold", false)) 1 else 0) {
+                          sp.edit().putBoolean("hold", it == 1).apply()
+                      },
+                      tv("Toggle: press once to start, again to stop.\nHold: clicks only while held.", 12f, MUTED)
+                          .apply { setPadding(0, dp(10), 0, 0) }
+                  ))
+
+                  // Action
+                  val cpsTv = tv("", 15f, WHITE, true).apply { setPadding(0, dp(16), 0, dp(4)) }
+                  val seek = SeekBar(this).apply {
+                      max = 29
+                      progress = sp.getInt("cps", 16) - 1
+                      progressTintList = ColorStateList.valueOf(WHITE)
+                      thumbTintList = ColorStateList.valueOf(WHITE)
+                      progressBackgroundTintList = ColorStateList.valueOf(0xFF333333.toInt())
+                      setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                          override fun onProgressChanged(s: SeekBar?, v: Int, u: Boolean) {
+                              cpsTv.text = "${v + 1} clicks / sec"
+                              sp.edit().putInt("cps", v + 1).apply()
+                          }
+                          override fun onStartTrackingTouch(s: SeekBar?) {}
+                          override fun onStopTrackingTouch(s: SeekBar?) {}
+                      })
+                  }
+                  cpsTv.text = "${seek.progress + 1} clicks / sec"
+                  root.addView(card(
+                      lab("Action"),
+                      segmented(listOf("Tap", "Drag"), if (sp.getBoolean("drag", false)) 1 else 0) {
+                          sp.edit().putBoolean("drag", it == 1).apply()
+                          refresh()
+                      },
+                      cpsTv,
+                      seek
+                  ))
+
+                  // Position
+                  posTv = tv("", 14f, MUTED).apply { setPadding(0, dp(6), 0, dp(14)) }
+                  val setBtn = tv("Set position", 15f, Color.BLACK, true).apply {
+                      gravity = Gravity.CENTER
+                      background = rounded(WHITE, 0, 14)
+                      setPadding(0, dp(14), 0, dp(14))
+                      setOnClickListener {
+                          val s = ClickService.instance
+                          if (s == null) {
+                              Toast.makeText(this@MainActivity, "Turn on the service first", Toast.LENGTH_SHORT).show()
+                          } else {
+                              s.showPicker()
+                              moveTaskToBack(true)
+                          }
+                      }
+                  }
+                  root.addView(card(lab("Position"), posTv, setBtn))
+
+                  root.addView(tv("Volume keys are only captured while the service is on and the trigger switch is enabled.", 12f, MUTED)
+                      .apply { setPadding(dp(4), dp(18), dp(4), 0) })
+
+                  setContentView(ScrollView(this).apply {
+                      setBackgroundColor(Color.BLACK)
+                      isFillViewport = true
+                      addView(root)
+                  })
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  refresh()
+              }
+
+              private fun refresh() {
+                  val on = ClickService.instance != null
+                  dot.background = GradientDrawable().apply {
+                      shape = GradientDrawable.OVAL
+                      setColor(if (on) GREEN else RED)
+                  }
+                  statusTv.text = if (on) "Service active" else "Service off"
+                  enableBtn.visibility = if (on) View.GONE else View.VISIBLE
+                  posTv.text = if (sp.contains("ax")) {
+                      var s = "A: ${sp.getFloat("ax", 0f).toInt()}, ${sp.getFloat("ay", 0f).toInt()}"
+                      if (sp.getBoolean("drag", false)) s += "   →   B: ${sp.getFloat("bx", 0f).toInt()}, ${sp.getFloat("by", 0f).toInt()}"
+                      s
+                  } else "Not set (uses screen center)"
               }
           }
           EOF_FILE
@@ -332,5 +589,6 @@ jobs:
         run: gradle assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: AutoClicker-apk
+          name: ClickKey-apk
           path: proj/app/build/outputs/apk/debug/app-debug.apk
+# END OF FILE
